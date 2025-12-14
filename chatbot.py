@@ -53,22 +53,36 @@ def build_prompt(query: str, context_chunks: List[Dict]) -> str:
     return prompt
 
 
-def generate_response(prompt: str) -> str:
+def generate_response_stream(prompt: str) -> str:
     """
-    Generate response using Gemini API.
+    Generate response using Gemini API with streaming.
 
     Args:
         prompt: Formatted prompt with context and question
 
     Returns:
-        Generated response text
+        Complete generated response text
     """
     try:
-        response = gemini_client.models.generate_content(model="gemma-3-27b-it", contents=prompt)
-        return response.text
+        full_response = ""
+        print("\nAssistant: ", end="", flush=True)
+
+        # Stream the response
+        for chunk in gemini_client.models.generate_content_stream(
+                model="gemma-3-27b-it",
+                contents=prompt
+        ):
+            if chunk.text:
+                print(chunk.text, end="", flush=True)
+                full_response += chunk.text
+
+        print()  # New line after streaming completes
+        return full_response
+
     except Exception as e:
-        print(f"Error generating response: {e}")
-        return "Sorry, I encountered an error while generating a response."
+        error_msg = f"Sorry, I encountered an error while generating a response: {e}"
+        print(error_msg)
+        return error_msg
 
 
 def chat(user_query: str) -> Dict[str, any]:
@@ -77,9 +91,6 @@ def chat(user_query: str) -> Dict[str, any]:
 
     Args:
         user_query: User's question
-        top_k: Number of context chunks to retrieve
-        threshold: Similarity threshold for retrieval
-        show_sources: Whether to include source information in response
 
     Returns:
         Dictionary with answer and metadata
@@ -89,8 +100,10 @@ def chat(user_query: str) -> Dict[str, any]:
     context_chunks = retrieve_context(user_query)
 
     if not context_chunks:
+        answer = "I couldn't find any relevant information in the database to answer your question."
+        print(f"\nAssistant: {answer}\n")
         return {
-            'answer': "I couldn't find any relevant information in the database to answer your question.",
+            'answer': answer,
             'sources': [],
             'num_sources': 0
         }
@@ -100,9 +113,9 @@ def chat(user_query: str) -> Dict[str, any]:
     # Step 2: Build prompt with context
     prompt = build_prompt(user_query, context_chunks)
 
-    # Step 3: Generate response
+    # Step 3: Generate response with streaming
     print("Generating response...")
-    answer = generate_response(prompt)
+    answer = generate_response_stream(prompt)
 
     # Step 4: Format response
     result = {
@@ -129,8 +142,6 @@ while True:
     if not user_input:
         continue
 
-    # Get response
+    # Get response (answer is now printed during streaming)
     result = chat(user_input)
-
-    # Print answer
-    print(f"\nAssistant: {result['answer']}\n")
+    print()  # Extra line for spacing
