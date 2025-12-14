@@ -1,10 +1,11 @@
-# Docling Test — RAG Chatbot
+# RAG Chatbot
 
 A simple Retrieval-Augmented Generation (RAG) chatbot that indexes local documents into Postgres, retrieves relevant chunks, and answers questions using Google GenAI.
 
 ## Prerequisites
 - Python 3.11+ (project shows Python 3.13 bytecode, use 3.11–3.13)
 - PostgreSQL 13+
+- [EmbeddingGemma](https://huggingface.co/google/embeddinggemma-300m)
 - Google GenAI API key (Gemini)
 
 ## Quick Start
@@ -32,9 +33,9 @@ Example:
 GEMINI_API_KEY=your_api_key_here
 DB_HOST=127.0.0.1
 DB_PORT=5432
-DB_NAME=docling
+DB_NAME=rag_test
 DB_USER=postgres
-DB_PASSWORD=postgres
+DB_PASSWORD=password
 ```
 
 3) Install dependencies
