@@ -1,7 +1,7 @@
 import os
 import psycopg2
 from psycopg2 import sql
-from typing import Iterable, Optional
+from typing import Iterable, Optional, List, Dict
 
 # Basic connection configuration with sensible defaults; allow override via env vars
 DB_NAME = os.getenv("DOC_DB_NAME", "rag_test")
@@ -9,6 +9,8 @@ DB_USER = os.getenv("DOC_DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DOC_DB_PASSWORD", "password")
 DB_HOST = os.getenv("DOC_DB_HOST", "localhost")
 DB_PORT = int(os.getenv("DOC_DB_PORT", "5432"))
+
+from embedding_service import embed_text
 
 
 def get_connection():
@@ -58,11 +60,9 @@ def insert_document_chunk(
         if embedding is None:
             query = sql.SQL(
                 """
-                INSERT INTO document_chunks (
-                    chunk_index, chunk_text, contextualized_text,
-                    chunk_tokens, contextualized_tokens
-                ) VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (chunk_index) DO NOTHING
+                INSERT INTO document_chunks (chunk_index, chunk_text, contextualized_text,
+                                             chunk_tokens, contextualized_tokens)
+                VALUES (%s, %s, %s, %s, %s) ON CONFLICT (chunk_index) DO NOTHING
                 RETURNING id
                 """
             )
@@ -78,11 +78,9 @@ def insert_document_chunk(
             array_literal = _embedding_to_sql_array(embedding)
             query = sql.SQL(
                 """
-                INSERT INTO document_chunks (
-                    chunk_index, chunk_text, contextualized_text,
-                    chunk_tokens, contextualized_tokens, embedding
-                ) VALUES (%s, %s, %s, %s, %s, {array}::vector)
-                ON CONFLICT (chunk_index) DO NOTHING
+                INSERT INTO document_chunks (chunk_index, chunk_text, contextualized_text,
+                                             chunk_tokens, contextualized_tokens, embedding)
+                VALUES (%s, %s, %s, %s, %s, {array}::vector) ON CONFLICT (chunk_index) DO NOTHING
                 RETURNING id
                 """
             ).format(array=sql.SQL(array_literal))
@@ -97,10 +95,7 @@ def insert_document_chunk(
         cur.execute(query, params)
         row = cur.fetchone()
         # If conflict occurred, RETURNING yields no row
-        if row:
-            inserted_id = row[0]
-        else:
-            inserted_id = None
+        inserted_id = row[0] if row else None
         conn.commit()
         return inserted_id
     except Exception:
@@ -109,3 +104,52 @@ def insert_document_chunk(
     finally:
         cur.close()
         conn.close()
+
+
+def retrieve_context(query: str, top_k: int = 3, threshold: float = 0.55) -> List[Dict]:
+    """
+    Retrieve relevant context chunks from vector database.
+
+    Args:
+        query: User's question
+        top_k: Number of chunks to retrieve
+        threshold: Minimum similarity threshold
+
+    Returns:
+        List of relevant chunks
+    """
+    conn = get_connection()
+    if not conn:
+        raise Exception("Database connection not established. Call connect() first.")
+
+    # Generate embedding for the query
+    query_embedding = embed_text(query)
+    cursor = conn.cursor()
+
+    # Query similar chunks
+    sql_query = """
+                SELECT id,
+                       chunk_index,
+                       chunk_text,
+                       contextualized_text,
+                       1 - (embedding <=> %s::vector) AS similarity
+                FROM document_chunks
+                WHERE 1 - (embedding <=> %s::vector) > %s
+                ORDER BY embedding <=> %s::vector
+                    LIMIT %s \
+                """
+
+    cursor.execute(sql_query, (query_embedding, query_embedding, threshold, query_embedding, top_k))
+
+    results = []
+    for row in cursor.fetchall():
+        results.append({
+            'id': row[0],
+            'chunk_index': row[1],
+            'chunk_text': row[2],
+            'contextualized_text': row[3],
+            'similarity': row[4]
+        })
+
+    cursor.close()
+    return results
