@@ -106,7 +106,7 @@ def insert_document_chunk(
         conn.close()
 
 
-def retrieve_context(query: str, top_k: int = 3, threshold: float = 0.55) -> List[Dict]:
+def retrieve_context(query: str, top_k: int = 5, threshold: float = 0.55) -> List[Dict]:
     """
     Retrieve relevant context chunks from vector database.
 
